@@ -5,6 +5,24 @@
    High-class restaurant aesthetic
    ============================================ */
 
+/* ============================================
+   TEXT READABILITY GUIDELINES
+
+   CRITICAL: Always ensure sufficient contrast for text visibility.
+
+   On dark backgrounds (primary, primary-light):
+   - Primary text: Use --color-white (#FFFFFF) for headings and important text
+   - Body text: Use --color-cream (#F5F2ED) for readable body content
+   - Secondary/muted text: Use --color-cream with opacity-60 (NOT --color-primary-lighter)
+
+   NEVER use --color-primary-lighter (#2C3E3F) as text color on dark backgrounds.
+   It is only for borders, dividers, and decorative elements.
+
+   Minimum contrast ratios (WCAG AA):
+   - Normal text: 4.5:1
+   - Large text (18px+ or 14px+ bold): 3:1
+   ============================================ */
+
 :root {
   /* Primary Colors */
   --color-primary: #111A1B;
