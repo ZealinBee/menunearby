@@ -255,12 +255,12 @@ export default function LocationSearch({
 
   return (
     <div ref={wrapperRef} className="relative w-full max-w-xl mx-auto">
-      <div className="flex items-center bg-[var(--color-primary-light)] border border-[var(--color-primary-lighter)]">
-        <div className="flex items-center gap-3 px-5 py-4 flex-1">
+      <div className="flex flex-col sm:flex-row sm:items-center bg-[var(--color-primary-light)] border border-[var(--color-primary-lighter)]">
+        <div className="flex items-center gap-3 px-4 sm:px-5 py-3 sm:py-4 flex-1">
           {isLoading ? (
-            <Loader2 className="w-5 h-5 text-[var(--color-accent)] animate-spin" strokeWidth={1.5} />
+            <Loader2 className="w-5 h-5 text-[var(--color-accent)] animate-spin flex-shrink-0" strokeWidth={1.5} />
           ) : (
-            <Search className="w-5 h-5 text-[var(--color-primary-lighter)]" strokeWidth={1.5} />
+            <Search className="w-5 h-5 text-[var(--color-primary-lighter)] flex-shrink-0" strokeWidth={1.5} />
           )}
           <input
             type="text"
@@ -268,13 +268,13 @@ export default function LocationSearch({
             onChange={handleInputChange}
             onFocus={() => results.length > 0 && setIsOpen(true)}
             placeholder={placeholder}
-            className="bg-transparent border-none outline-none text-[var(--color-cream)] placeholder:text-[var(--color-cream)] placeholder:opacity-50 w-full"
+            className="bg-transparent border-none outline-none text-[var(--color-cream)] placeholder:text-[var(--color-cream)] placeholder:opacity-50 w-full text-base"
             autoComplete="off"
           />
           {query && (
             <button
               onClick={handleClear}
-              className="p-1 hover:bg-[var(--color-primary-lighter)] transition-colors"
+              className="p-1 hover:bg-[var(--color-primary-lighter)] transition-colors flex-shrink-0"
               aria-label="Clear search"
             >
               <X className="w-4 h-4 text-[var(--color-primary-lighter)]" strokeWidth={1.5} />
@@ -282,7 +282,7 @@ export default function LocationSearch({
           )}
         </div>
         <button
-          className="btn btn-primary h-full px-8 py-4 mr-3"
+          className="btn btn-primary w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 sm:mr-3"
           onClick={() => selectedLocation && onLocationSelect?.(selectedLocation)}
         >
           Search

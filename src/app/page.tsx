@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { MapPin, ArrowLeft } from "lucide-react";
 import LocationSearch from "@/components/LocationSearch";
 import RestaurantList from "@/components/RestaurantList";
@@ -13,6 +14,7 @@ interface SelectedLocation {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
 
   const handleLocationSelect = (location: SelectedLocation) => {
@@ -20,8 +22,11 @@ export default function Home() {
   };
 
   const handleViewDetails = (restaurantId: string) => {
-    // TODO: Navigate to restaurant details page
-    console.log("View details for restaurant:", restaurantId);
+    if (selectedLocation) {
+      router.push(
+        `/restaurant/${encodeURIComponent(restaurantId)}?lat=${selectedLocation.lat}&lon=${selectedLocation.lon}`
+      );
+    }
   };
 
   const handleBackToSearch = () => {
@@ -34,7 +39,7 @@ export default function Home() {
       <div className="min-h-screen bg-[var(--color-primary)]">
         {/* Back Button Header */}
         <header className="border-b border-[var(--color-primary-lighter)]">
-          <div className="max-w-6xl mx-auto px-8 py-4">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 py-4">
             <button
               onClick={handleBackToSearch}
               className="flex items-center gap-2 text-[var(--color-cream)] hover:text-[var(--color-accent)] transition-colors"
@@ -47,7 +52,7 @@ export default function Home() {
 
         {/* Location Info */}
         <div className="bg-[var(--color-primary-light)] border-b border-[var(--color-primary-lighter)]">
-          <div className="max-w-6xl mx-auto px-8 py-4">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 py-4">
             <div className="flex items-center gap-2 text-sm text-[var(--color-cream)] opacity-70">
               <MapPin className="w-4 h-4" strokeWidth={1.5} />
               <span>{selectedLocation.display_name.split(",").slice(0, 2).join(", ")}</span>
@@ -79,15 +84,15 @@ export default function Home() {
         <div className="absolute inset-0 bg-[var(--color-primary)] opacity-90" />
 
         {/* Content */}
-        <div className="relative z-10 max-w-4xl mx-auto px-8 text-center">
+        <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-8 text-center">
           <span className="text-label text-[var(--color-accent)] mb-4 block">
             Mood to eat out?
           </span>
           <h1 className="text-display text-[var(--color-white)] mb-6">
             Find Nearby Restaurants & Their Menus
           </h1>
-          <p className="font-accent text-lg text-[var(--color-cream)] opacity-80 max-w-2xl mx-auto mb-10">
-            Discover what&apos;s cooking around you. Browse menus, check prices, and pick your next meal.
+          <p className="font-accent text-base sm:text-lg text-[var(--color-cream)] opacity-80 max-w-2xl mx-auto mb-8 sm:mb-10">
+            Discover what&apos;s cooking around you. Browse menus, check prices, and pick your next meal. Finland only.
           </p>
 
           {/* Location Search Bar */}
@@ -96,8 +101,8 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[var(--color-primary-lighter)] py-12">
-        <div className="max-w-6xl mx-auto px-8 text-center">
+      <footer className="border-t border-[var(--color-primary-lighter)] py-8 sm:py-12">
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 text-center">
           <p className="text-[var(--color-cream)] opacity-40 text-sm">
             © {new Date().getFullYear()} Zhiyuan Liu. All rights reserved.
           </p>
