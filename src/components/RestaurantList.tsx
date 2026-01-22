@@ -70,7 +70,7 @@ export default function RestaurantList({ userLat, userLon, onViewDetails }: Rest
   const [priceFilter, setPriceFilter] = useState<string>('all');
   const debouncedRadius = useDebounce(radius, 500); // 500ms debounce
 
-  const { restaurants, isLoading, error, refetch } = useNearbyRestaurants(
+  const { restaurants, isLoading, isLoadingMore, error, hasMore, refetch, loadMore } = useNearbyRestaurants(
     userLat,
     userLon,
     debouncedRadius
@@ -265,18 +265,33 @@ export default function RestaurantList({ userLat, userLon, onViewDetails }: Rest
         ) : restaurantsWithDistance.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {restaurantsWithDistance.map((restaurant) => (
-              <RestaurantCard
-                key={restaurant.id}
-                restaurant={restaurant}
-                distance={restaurant.distance}
-                onViewDetails={onViewDetails}
-                hasImageError={imageErrors.has(restaurant.id)}
-                onImageError={() => handleImageError(restaurant.id)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {restaurantsWithDistance.map((restaurant) => (
+                <RestaurantCard
+                  key={restaurant.id}
+                  restaurant={restaurant}
+                  distance={restaurant.distance}
+                  onViewDetails={onViewDetails}
+                  hasImageError={imageErrors.has(restaurant.id)}
+                  onImageError={() => handleImageError(restaurant.id)}
+                />
+              ))}
+            </div>
+
+            {/* Load More Button */}
+            {hasMore && (
+              <div className="flex justify-center mt-8">
+                <button
+                  onClick={loadMore}
+                  disabled={isLoadingMore}
+                  className="btn btn-secondary px-8 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoadingMore ? 'Loading...' : 'Load More Restaurants'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>

@@ -2,6 +2,8 @@
 
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useRestaurantDetails } from '@/hooks/useRestaurantDetails';
+import { useMenuScrape } from '@/hooks/useMenuScrape';
+import { MenuSection } from '@/components/menu/MenuSection';
 import {
   ArrowLeft,
   Star,
@@ -9,11 +11,9 @@ import {
   Phone,
   Globe,
   Clock,
-  Utensils,
-  ShoppingBag,
-  Truck,
-  CalendarCheck,
   ExternalLink,
+  UtensilsCrossed,
+  Loader2,
 } from 'lucide-react';
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -48,6 +48,15 @@ export default function RestaurantDetailsPage() {
   const userLon = searchParams.get('lon') ? parseFloat(searchParams.get('lon')!) : null;
 
   const { restaurant, isLoading, error } = useRestaurantDetails(placeId);
+  const {
+    menu,
+    isLoading: menuLoading,
+    error: menuError,
+    sourceUrl,
+    cached,
+    fetchMenu,
+    refetch
+  } = useMenuScrape(placeId, restaurant?.website);
 
   const distance =
     restaurant && userLat && userLon
@@ -57,6 +66,9 @@ export default function RestaurantDetailsPage() {
   const handleBack = () => {
     router.back();
   };
+
+  const hasWebsite = Boolean(restaurant?.website);
+  const menuRequested = menu || menuLoading || menuError;
 
   if (isLoading) {
     return <LoadingSkeleton />;
@@ -157,88 +169,94 @@ export default function RestaurantDetailsPage() {
               </div>
             )}
 
-            {/* Features */}
-            <div>
-              <h2 className="text-lg text-[var(--color-white)] mb-4">Services</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <FeatureBadge
-                  icon={<Utensils className="w-5 h-5" strokeWidth={1.5} />}
-                  label="Dine-in"
-                  available={restaurant.features.dineIn}
-                />
-                <FeatureBadge
-                  icon={<ShoppingBag className="w-5 h-5" strokeWidth={1.5} />}
-                  label="Takeout"
-                  available={restaurant.features.takeout}
-                />
-                <FeatureBadge
-                  icon={<Truck className="w-5 h-5" strokeWidth={1.5} />}
-                  label="Delivery"
-                  available={restaurant.features.delivery}
-                />
-                <FeatureBadge
-                  icon={<CalendarCheck className="w-5 h-5" strokeWidth={1.5} />}
-                  label="Reservations"
-                  available={restaurant.features.reservable}
-                />
-              </div>
-            </div>
-
-            {/* Reviews */}
-            {restaurant.reviews && restaurant.reviews.length > 0 && (
+            {/* Menu Section */}
+            {hasWebsite && (
               <div>
-                <h2 className="text-lg text-[var(--color-white)] mb-4">Reviews</h2>
-                <div className="space-y-4">
-                  {restaurant.reviews.map((review) => (
-                    <div
-                      key={review.id}
-                      className="card bg-[var(--color-primary-light)] border-[var(--color-primary-lighter)]"
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg text-[var(--color-white)]">Menu</h2>
+                  {menu && (
+                    <button
+                      onClick={refetch}
+                      disabled={menuLoading}
+                      className="text-sm text-[var(--color-accent)] hover:text-[var(--color-accent-light)] transition-colors"
                     >
-                      <div className="flex items-start gap-3">
-                        {review.authorPhoto ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={review.authorPhoto}
-                            alt={review.authorName}
-                            className="w-10 h-10 object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 bg-[var(--color-primary-lighter)] flex items-center justify-center flex-shrink-0">
-                            <span className="text-[var(--color-cream)] text-sm font-medium">
-                              {review.authorName.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-[var(--color-white)] font-medium truncate">
-                              {review.authorName}
-                            </span>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {[...Array(5)].map((_, i) => (
-                                <Star
-                                  key={i}
-                                  className={`w-3.5 h-3.5 ${
-                                    i < review.rating
-                                      ? 'text-[var(--color-gold)] fill-[var(--color-gold)]'
-                                      : 'text-[var(--color-primary-lighter)]'
-                                  }`}
-                                  strokeWidth={1.5}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                          <p className="text-[var(--color-cream)] opacity-70 text-sm mb-2">
-                            {review.relativeTime}
-                          </p>
-                          <p className="text-[var(--color-cream)] opacity-90 text-sm leading-relaxed">
-                            {review.text}
-                          </p>
+                      Refresh
+                    </button>
+                  )}
+                </div>
+
+                {!menuRequested ? (
+                  <button
+                    onClick={fetchMenu}
+                    className="flex items-center gap-2 px-4 py-3 bg-[var(--color-accent)] text-white font-medium hover:bg-[var(--color-accent)]/90 transition-colors"
+                  >
+                    <UtensilsCrossed className="w-4 h-4" strokeWidth={2} />
+                    Fetch Menu
+                  </button>
+                ) : menuLoading ? (
+                  <div className="bg-[var(--color-primary-light)] p-6">
+                    <div className="flex items-center gap-3 text-[var(--color-cream)] opacity-60">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Fetching menu from website...</span>
+                    </div>
+                  </div>
+                ) : menuError ? (
+                  <div className="bg-[var(--color-primary-light)] p-6">
+                    <p className="text-[var(--color-cream)] opacity-60 mb-4">{menuError}</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={fetchMenu}
+                        className="px-4 py-2 bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent)]/90 transition-colors"
+                      >
+                        Try Again
+                      </button>
+                      <a
+                        href={restaurant.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-[var(--color-primary-lighter)] text-[var(--color-cream)] text-sm font-medium hover:bg-[var(--color-primary-lighter)]/80 transition-colors"
+                      >
+                        Visit Website
+                      </a>
+                    </div>
+                  </div>
+                ) : menu ? (
+                  <div className="bg-[var(--color-primary-light)] p-6">
+                    {menu.sections.length > 0 ? (
+                      <div className="space-y-6">
+                        {menu.sections.map((section, index) => (
+                          <MenuSection key={`${section.title}-${index}`} section={section} />
+                        ))}
+                      </div>
+                    ) : menu.rawText ? (
+                      <pre className="whitespace-pre-wrap text-sm text-[var(--color-cream)] opacity-80 font-sans">
+                        {menu.rawText}
+                      </pre>
+                    ) : null}
+
+                    {/* Menu footer */}
+                    <div className="mt-6 pt-4 border-t border-[var(--color-primary-lighter)]">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-[var(--color-cream)] opacity-50">
+                        <div className="flex items-center gap-2">
+                          {cached && <span className="text-xs">(cached)</span>}
+                          <span>
+                            Updated: {new Date(menu.scrapedAt).toLocaleDateString()}
+                          </span>
                         </div>
+                        {sourceUrl && (
+                          <a
+                            href={sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[var(--color-accent)] hover:text-[var(--color-accent-light)] transition-colors"
+                          >
+                            View Original
+                          </a>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -335,31 +353,9 @@ export default function RestaurantDetailsPage() {
               </div>
             )}
           </div>
+
         </div>
       </main>
-    </div>
-  );
-}
-
-function FeatureBadge({
-  icon,
-  label,
-  available,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  available: boolean;
-}) {
-  return (
-    <div
-      className={`flex flex-col items-center gap-2 p-3 border ${
-        available
-          ? 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 text-[var(--color-accent)]'
-          : 'border-[var(--color-primary-lighter)] bg-[var(--color-primary-light)] text-[var(--color-cream)] opacity-40'
-      }`}
-    >
-      {icon}
-      <span className="text-xs font-sans">{label}</span>
     </div>
   );
 }

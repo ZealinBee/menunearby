@@ -71,6 +71,7 @@ export const CACHE_TTL = {
   NEARBY_SEARCH: 15 * 60 * 1000, // 15 minutes (restaurants don't change often)
   PLACE_DETAILS: 60 * 60 * 1000, // 1 hour
   PHOTO: 7 * 24 * 60 * 60 * 1000, // 7 days (photos rarely change)
+  MENU: 48 * 60 * 60 * 1000, // 48 hours (menus change infrequently)
 };
 
 // Error codes

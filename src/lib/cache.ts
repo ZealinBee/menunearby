@@ -82,3 +82,7 @@ export function nearbySearchCacheKey(
 export function placeDetailsCacheKey(placeId: string): string {
   return `details:${placeId}`;
 }
+
+export function menuCacheKey(placeId: string): string {
+  return `menu:${placeId}`;
+}

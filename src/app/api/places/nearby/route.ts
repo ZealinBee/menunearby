@@ -13,7 +13,7 @@ import {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { latitude, longitude, radius = DEFAULT_RADIUS_METERS } = body;
+    const { latitude, longitude, radius = DEFAULT_RADIUS_METERS, pageToken } = body;
 
     // Validate request
     if (typeof latitude !== 'number' || typeof longitude !== 'number') {
@@ -31,15 +31,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check cache
-    const cacheKey = nearbySearchCacheKey(latitude, longitude, radius);
-    const cached = placesCache.get<NearbyRestaurantsResponse>(cacheKey);
-    if (cached) {
-      return NextResponse.json({
-        ...cached.data,
-        cached: true,
-        cacheAge: cached.age,
-      });
+    // Skip cache for paginated requests
+    if (!pageToken) {
+      const cacheKey = nearbySearchCacheKey(latitude, longitude, radius);
+      const cached = placesCache.get<NearbyRestaurantsResponse>(cacheKey);
+      if (cached) {
+        return NextResponse.json({
+          ...cached.data,
+          cached: true,
+          cacheAge: cached.age,
+        });
+      }
     }
 
     // Validate API key
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
             },
           },
           languageCode: 'en',
+          ...(pageToken && { pageToken }),
         }),
       }
     );
@@ -97,8 +100,11 @@ export async function POST(request: Request) {
       cached: false,
     };
 
-    // Cache the result
-    placesCache.set(cacheKey, result, CACHE_TTL.NEARBY_SEARCH);
+    // Only cache the first page of results
+    if (!pageToken) {
+      const cacheKey = nearbySearchCacheKey(latitude, longitude, radius);
+      placesCache.set(cacheKey, result, CACHE_TTL.NEARBY_SEARCH);
+    }
 
     return NextResponse.json(result);
   } catch (error) {

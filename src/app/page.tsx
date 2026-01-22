@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MapPin, ArrowLeft } from "lucide-react";
 import LocationSearch from "@/components/LocationSearch";
 import RestaurantList from "@/components/RestaurantList";
@@ -13,12 +13,25 @@ interface SelectedLocation {
   lon: string;
 }
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
-  const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
+  const searchParams = useSearchParams();
+
+  // Read location from URL params
+  const lat = searchParams.get("lat");
+  const lon = searchParams.get("lon");
+  const displayName = searchParams.get("location");
+
+  const selectedLocation: SelectedLocation | null =
+    lat && lon && displayName
+      ? { place_id: 0, display_name: displayName, lat, lon }
+      : null;
 
   const handleLocationSelect = (location: SelectedLocation) => {
-    setSelectedLocation(location);
+    // Store location in URL params so it persists on navigation
+    router.push(
+      `/?lat=${location.lat}&lon=${location.lon}&location=${encodeURIComponent(location.display_name)}`
+    );
   };
 
   const handleViewDetails = (restaurantId: string) => {
@@ -30,7 +43,7 @@ export default function Home() {
   };
 
   const handleBackToSearch = () => {
-    setSelectedLocation(null);
+    router.push("/");
   };
 
   // Show restaurant list when location is selected
@@ -103,11 +116,26 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-[var(--color-primary-lighter)] py-8 sm:py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-8 text-center">
+          <p className="text-[var(--color-cream)] opacity-60 text-sm mb-2">
+            All restaurant data powered by Google Maps
+          </p>
           <p className="text-[var(--color-cream)] opacity-40 text-sm">
             © {new Date().getFullYear()} Zhiyuan Liu. All rights reserved.
           </p>
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--color-primary)] flex items-center justify-center">
+        <div className="text-[var(--color-cream)]">Loading...</div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
