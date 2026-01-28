@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useRestaurantDetails } from '@/hooks/useRestaurantDetails';
 import { useMenuScrape } from '@/hooks/useMenuScrape';
@@ -69,6 +70,13 @@ export default function RestaurantDetailsPage() {
 
   const hasWebsite = Boolean(restaurant?.website);
   const menuRequested = menu || menuLoading || menuError;
+
+  // Automatically fetch menu when restaurant details load
+  useEffect(() => {
+    if (restaurant?.website && !menu && !menuLoading && !menuError) {
+      fetchMenu();
+    }
+  }, [restaurant?.website, menu, menuLoading, menuError, fetchMenu]);
 
   if (isLoading) {
     return <LoadingSkeleton />;

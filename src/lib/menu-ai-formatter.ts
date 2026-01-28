@@ -4,39 +4,9 @@ import type { MenuContent, MenuSection } from '@/types/menu';
 
 const anthropic = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a menu parser. Your task is to extract structured menu information from raw text scraped from restaurant websites.
-
-Given raw menu text, extract and organize it into clear sections with menu items. For each item, identify:
-- name: The dish name
-- description: A brief description (if available)
-- price: The price (keep original format with currency symbol)
-- dietary: Array of dietary tags like "vegetarian", "vegan", "gluten-free", "lactose-free" (if indicated)
-
-Output ONLY valid JSON in this exact format:
-{
-  "sections": [
-    {
-      "title": "Section Name",
-      "items": [
-        {
-          "name": "Dish Name",
-          "description": "Description if available",
-          "price": "€15.00",
-          "dietary": ["vegetarian"]
-        }
-      ]
-    }
-  ]
-}
-
-Rules:
-- Group items into logical sections (Starters, Mains, Desserts, Drinks, etc.)
-- If no clear sections exist, create appropriate ones based on the items
-- Keep prices in their original format
-- Only include dietary tags if explicitly mentioned
-- Clean up messy text but preserve the meaning
-- If text is not a menu or is unreadable, return {"sections": []}
-- Output ONLY the JSON, no markdown code blocks or explanations`;
+const SYSTEM_PROMPT = `Parse restaurant menu text into JSON. Output ONLY valid JSON:
+{"sections":[{"title":"Section","items":[{"name":"Dish","description":"desc","price":"€15","dietary":["vegan"]}]}]}
+Rules: Group by sections, keep original prices, only include dietary if mentioned. If not a menu: {"sections":[]}`;
 
 export async function formatMenuWithAI(menu: MenuContent): Promise<MenuContent> {
   // Skip if no API key configured
@@ -65,29 +35,89 @@ export async function formatMenuWithAI(menu: MenuContent): Promise<MenuContent> 
   }
 
   try {
-    // Truncate very long text to avoid token limits
-    const truncatedText = rawText.substring(0, 8000);
+    const startTime = Date.now();
+    // Truncate for speed - 6000 chars is enough for most menus
+    const truncatedText = rawText.substring(0, 6000);
+    console.log(`[Menu AI] Formatting ${truncatedText.length} chars...`);
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 4000,
       messages: [
         {
           role: 'user',
-          content: `Parse this restaurant menu text into structured JSON format:\n\n${truncatedText}`,
+          content: `Parse menu:\n${truncatedText}`,
         },
       ],
       system: SYSTEM_PROMPT,
     });
 
+    console.log(`[Menu AI] API call: ${Date.now() - startTime}ms`);
+
     // Extract text response
-    const responseText = message.content
+    let responseText = message.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')
       .map((block) => block.text)
       .join('');
 
-    // Parse JSON response
-    const parsed = JSON.parse(responseText);
+    // Strip markdown code blocks if present
+    responseText = responseText
+      .replace(/^```(?:json)?\s*\n?/i, '')
+      .replace(/\n?```\s*$/i, '')
+      .trim();
+
+    // Try to parse JSON, handling truncated responses
+    let parsed;
+    try {
+      parsed = JSON.parse(responseText);
+    } catch (jsonError) {
+      // Try to salvage truncated JSON
+      console.warn('JSON parse failed, attempting to salvage...');
+
+      // Try multiple salvage strategies
+      const salvageAttempts = [
+        // Strategy 1: Find last complete item }] and close sections
+        () => {
+          const idx = responseText.lastIndexOf('}]');
+          if (idx > 0) return responseText.substring(0, idx + 2) + ']}';
+          return null;
+        },
+        // Strategy 2: Find last complete item } and close arrays
+        () => {
+          const idx = responseText.lastIndexOf('}');
+          if (idx > 0) return responseText.substring(0, idx + 1) + ']}]}';
+          return null;
+        },
+        // Strategy 3: Find last complete section and close
+        () => {
+          const idx = responseText.lastIndexOf('"items"');
+          if (idx > 0) {
+            const beforeItems = responseText.substring(0, idx);
+            const lastBrace = beforeItems.lastIndexOf('{');
+            if (lastBrace > 0) return responseText.substring(0, lastBrace) + ']}';
+          }
+          return null;
+        },
+      ];
+
+      for (const attempt of salvageAttempts) {
+        const salvaged = attempt();
+        if (salvaged) {
+          try {
+            parsed = JSON.parse(salvaged);
+            console.log('Successfully salvaged truncated JSON');
+            break;
+          } catch {
+            // Try next strategy
+          }
+        }
+      }
+
+      if (!parsed) {
+        console.error('All salvage attempts failed');
+        return menu;
+      }
+    }
 
     if (!parsed.sections || !Array.isArray(parsed.sections)) {
       return menu;

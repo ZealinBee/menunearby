@@ -53,22 +53,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // Call Google Places API
+    // Call Google Places API (Text Search for pagination support)
     const response = await fetch(
-      'https://places.googleapis.com/v1/places:searchNearby',
+      'https://places.googleapis.com/v1/places:searchText',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
-          'X-Goog-FieldMask': NEARBY_SEARCH_FIELDS,
+          'X-Goog-FieldMask': NEARBY_SEARCH_FIELDS + ',nextPageToken',
         },
         body: JSON.stringify({
-          includedTypes: ['restaurant', 'cafe', 'bar'],
-          excludedTypes: ['gas_station', 'convenience_store'],
-          maxResultCount: MAX_RESULTS,
-          rankPreference: 'DISTANCE', // Sort by distance, not popularity
-          locationRestriction: {
+          textQuery: 'restaurants',
+          pageSize: MAX_RESULTS,
+          rankPreference: 'DISTANCE',
+          locationBias: {
             circle: {
               center: { latitude, longitude },
               radius: radius,

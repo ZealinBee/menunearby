@@ -121,8 +121,8 @@ export default function RestaurantList({ userLat, userLon, onViewDetails }: Rest
                 {isLoading
                   ? 'Searching...'
                   : hasActiveFilters
-                    ? `${filteredCount} of ${totalCount} Restaurant${totalCount !== 1 ? 's' : ''}`
-                    : `${filteredCount} Restaurant${filteredCount !== 1 ? 's' : ''} Found`}
+                    ? `Showing ${filteredCount} of ${totalCount} loaded`
+                    : 'Browse restaurants near you'}
               </span>
               <h1 className="text-xl sm:text-2xl text-[var(--color-white)]">Nearby Restaurants</h1>
             </div>
@@ -290,6 +290,15 @@ export default function RestaurantList({ userLat, userLon, onViewDetails }: Rest
                   {isLoadingMore ? 'Loading...' : 'Load More Restaurants'}
                 </button>
               </div>
+            )}
+
+            {/* End of results message */}
+            {!hasMore && totalCount > 0 && (
+              <p className="text-center text-sm text-[var(--color-cream)] opacity-50 mt-8">
+                {totalCount >= 60
+                  ? `Showing all ${totalCount} results. Adjust the radius to explore a different area.`
+                  : `End of results (${totalCount} restaurant${totalCount !== 1 ? 's' : ''})`}
+              </p>
             )}
           </>
         )}

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useMenuScrape } from '@/hooks/useMenuScrape';
 import { MenuSection } from './MenuSection';
+import { RawMenuFormatter } from './RawMenuFormatter';
 
 interface MenuViewProps {
   placeId: string;
@@ -11,16 +12,24 @@ interface MenuViewProps {
 
 function MenuSkeleton() {
   return (
-    <div className="animate-pulse space-y-6">
-      <div className="h-6 bg-primary-lighter w-32" />
-      <div className="space-y-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="flex justify-between">
-            <div className="space-y-2 flex-1">
-              <div className="h-5 bg-primary-lighter w-3/4" />
-              <div className="h-4 bg-primary-lighter w-1/2" />
+    <div className="animate-pulse">
+      {/* Section header skeleton */}
+      <div className="flex items-center gap-4 mb-6">
+        <div className="h-[1px] w-8 bg-primary-lighter" />
+        <div className="h-7 bg-primary-lighter w-32" />
+        <div className="flex-1 h-[1px] bg-primary-lighter" />
+      </div>
+
+      {/* Menu items skeleton */}
+      <div className="space-y-4">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="py-4 border-b border-primary-lighter/30">
+            <div className="flex items-baseline gap-2">
+              <div className="h-5 bg-primary-lighter w-48" />
+              <div className="flex-1 border-b border-dotted border-primary-lighter/50 mb-1.5" />
+              <div className="h-5 bg-primary-lighter w-16" />
             </div>
-            <div className="h-5 bg-primary-lighter w-16 ml-4" />
+            <div className="h-4 bg-primary-lighter/50 w-3/4 mt-2" />
           </div>
         ))}
       </div>
@@ -41,41 +50,61 @@ export function MenuView({ placeId, websiteUrl }: MenuViewProps) {
 
   if (!websiteUrl) {
     return (
-      <div className="text-center py-12">
-        <p className="text-cream/60">No website available for this restaurant.</p>
+      <div className="bg-primary-light border border-primary-lighter p-8">
+        <div className="text-center py-8">
+          <div className="w-12 h-[1px] bg-accent mx-auto mb-4" />
+          <p className="text-cream/60 italic">No website available for this restaurant.</p>
+        </div>
       </div>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="bg-primary-light p-6">
-        <MenuSkeleton />
-        <p className="text-cream/60 text-sm mt-4">Fetching menu from website...</p>
+      <div className="bg-primary-light border border-primary-lighter">
+        {/* Header */}
+        <div className="border-b border-primary-lighter p-6 text-center">
+          <p className="text-label text-accent tracking-widest">Menu</p>
+        </div>
+
+        {/* Loading content */}
+        <div className="p-8">
+          <MenuSkeleton />
+          <p className="text-cream/40 text-sm mt-6 text-center italic">
+            Fetching menu from restaurant website...
+          </p>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-primary-light p-6">
-        <div className="text-center py-8">
-          <p className="text-cream/60 mb-4">{error}</p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button
-              onClick={() => fetchMenu()}
-              className="px-4 py-2 bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors"
-            >
-              Try Again
-            </button>
-            <a
-              href={websiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 bg-primary-lighter text-cream text-sm font-medium hover:bg-primary-lighter/80 transition-colors text-center"
-            >
-              Visit Website
-            </a>
+      <div className="bg-primary-light border border-primary-lighter">
+        <div className="border-b border-primary-lighter p-6 text-center">
+          <p className="text-label text-accent tracking-widest">Menu</p>
+        </div>
+
+        <div className="p-8">
+          <div className="text-center py-8">
+            <div className="w-12 h-[1px] bg-primary-lighter mx-auto mb-4" />
+            <p className="text-cream/60 mb-6 italic">{error}</p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={() => fetchMenu()}
+                className="btn btn-primary"
+              >
+                Try Again
+              </button>
+              <a
+                href={websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-ghost"
+              >
+                Visit Website
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -87,46 +116,53 @@ export function MenuView({ placeId, websiteUrl }: MenuViewProps) {
   }
 
   return (
-    <div className="bg-primary-light p-6">
+    <div className="bg-primary-light border border-primary-lighter">
+      {/* Decorative header */}
+      <div className="border-b border-primary-lighter p-6 text-center">
+        <p className="text-label text-accent tracking-widest">Menu</p>
+      </div>
+
       {/* Menu Content */}
-      {menu.sections.length > 0 ? (
-        <div className="space-y-6">
-          {menu.sections.map((section, index) => (
-            <MenuSection key={`${section.title}-${index}`} section={section} />
-          ))}
-        </div>
-      ) : menu.rawText ? (
-        <div className="prose prose-invert max-w-none">
-          <pre className="whitespace-pre-wrap text-sm text-cream/80 font-sans">
-            {menu.rawText}
-          </pre>
-        </div>
-      ) : null}
+      <div className="p-8">
+        {menu.sections.length > 0 ? (
+          <div>
+            {menu.sections.map((section, index) => (
+              <MenuSection key={`${section.title}-${index}`} section={section} />
+            ))}
+          </div>
+        ) : menu.rawText ? (
+          <RawMenuFormatter text={menu.rawText} />
+        ) : null}
+      </div>
 
       {/* Footer with source info */}
-      <div className="mt-8 pt-4 border-t border-primary-lighter">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-cream/50">
-          <div className="flex items-center gap-2">
-            {cached && <span className="text-xs">(cached)</span>}
+      <div className="border-t border-primary-lighter px-8 py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3 text-xs text-cream/40">
+            {cached && (
+              <span className="border border-primary-lighter px-2 py-0.5">
+                Cached
+              </span>
+            )}
             <span>
-              Last updated: {new Date(menu.scrapedAt).toLocaleDateString()}
+              Updated {new Date(menu.scrapedAt).toLocaleDateString()}
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <button
               onClick={refetch}
-              className="text-accent hover:text-accent/80 transition-colors"
+              className="text-xs text-label text-cream/60 hover:text-accent transition-colors"
             >
-              Refresh Menu
+              Refresh
             </button>
             {sourceUrl && (
               <a
                 href={sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-accent hover:text-accent/80 transition-colors"
+                className="text-xs text-label text-cream/60 hover:text-accent transition-colors"
               >
-                View Original
+                View Source
               </a>
             )}
           </div>
