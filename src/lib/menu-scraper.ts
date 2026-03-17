@@ -2,9 +2,19 @@
 // Uses AI to intelligently find menu pages and extract content from text and images
 
 import Anthropic from '@anthropic-ai/sdk';
-import { MenuContent } from '@/types/menu';
+import { MenuContent, MenuSection, MenuItem } from '@/types/menu';
 
-const anthropic = new Anthropic();
+// Lazy-loaded Anthropic client to ensure env vars are loaded
+let _anthropic: Anthropic | null = null;
+function getAnthropicClient(): Anthropic | null {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return null;
+  }
+  if (!_anthropic) {
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+}
 
 interface ScrapeResult {
   success: boolean;
@@ -16,12 +26,6 @@ interface ScrapeResult {
 interface FetchResult {
   html: string;
   finalUrl: string;
-}
-
-interface MenuPageAnalysis {
-  menuUrl: string | null;
-  confidence: 'high' | 'medium' | 'low';
-  reasoning: string;
 }
 
 interface ExtractedImages {
@@ -49,20 +53,22 @@ export async function scrapeMenu(websiteUrl: string): Promise<ScrapeResult> {
       };
     }
 
-    // Step 2: Find ALL menu page URLs
+    // Step 2: Find ALL potential menu page URLs (expanded patterns)
     const allMenuLinks = findAllMenuLinks(mainPage.html, mainPage.finalUrl);
     console.log(`[Menu Scraper] Found ${allMenuLinks.length} menu links:`, allMenuLinks);
 
-    // Step 3: Fetch all menu pages (including main page if no links found)
+    // Step 3: Fetch all menu pages (including main page)
     const pagesToProcess: { html: string; url: string }[] = [];
 
-    if (allMenuLinks.length === 0) {
-      // No menu links found, process main page
-      pagesToProcess.push({ html: mainPage.html, url: mainPage.finalUrl });
-    } else {
-      // Fetch up to 4 menu pages in parallel
-      const menuPagesToFetch = allMenuLinks.slice(0, 4);
+    // Always include main page as it might have inline menu
+    pagesToProcess.push({ html: mainPage.html, url: mainPage.finalUrl });
+
+    if (allMenuLinks.length > 0) {
+      // Fetch up to 5 menu pages in parallel
+      const menuPagesToFetch = allMenuLinks.slice(0, 5);
       const fetchPromises = menuPagesToFetch.map(async (url) => {
+        // Skip if it's the same as main page
+        if (url === mainPage.finalUrl) return null;
         console.log(`[Menu Scraper] Fetching menu page: ${url}`);
         const page = await fetchPage(url);
         return page ? { html: page.html, url: page.finalUrl } : null;
@@ -74,37 +80,37 @@ export async function scrapeMenu(websiteUrl: string): Promise<ScrapeResult> {
           pagesToProcess.push(result);
         }
       }
-
-      // If no menu pages loaded, fallback to main page
-      if (pagesToProcess.length === 0) {
-        pagesToProcess.push({ html: mainPage.html, url: mainPage.finalUrl });
-      }
     }
 
-    // Step 4: Extract text content from all menu pages
-    let allTextContent = '';
-    let menuSourceUrl = pagesToProcess[0]?.url || mainPage.finalUrl;
+    // Step 4: Extract content from all pages and find the best menu content
+    let bestMenuContent = '';
+    let menuSourceUrl = mainPage.finalUrl;
+    let bestScore = 0;
 
     for (const page of pagesToProcess) {
       const pageText = extractTextContent(page.html);
-      if (pageText.length > 100) {
-        allTextContent += `\n=== ${page.url} ===\n${pageText}\n`;
+      const isMenuUrl = /ruokalista|menu|lounas|speisekarte|meny|carta|food|ravintola/i.test(page.url);
+      const priceCount = countPrices(pageText);
+
+      // Score this page's likelihood of being a menu
+      let score = priceCount * 10;
+      if (isMenuUrl) score += 50;
+      if (pageText.length > 500) score += 20;
+
+      console.log(`[Menu Scraper] Page ${page.url}: ${priceCount} prices, score=${score}`);
+
+      if (score > bestScore && pageText.length > 100) {
+        bestScore = score;
+        bestMenuContent = pageText;
+        menuSourceUrl = page.url;
       }
     }
 
-    const textContent = allTextContent || extractTextContent(mainPage.html);
+    console.log(`[Menu Scraper] Best page: ${menuSourceUrl}, score: ${bestScore}`);
 
-    // Step 5: Check if text content looks like a menu (has prices OR is from a known menu URL)
-    const isFromMenuUrl = pagesToProcess.some(p =>
-      /ruokalista|menu|lounas|speisekarte|meny|carta/i.test(p.url)
-    );
-    const textHasMenuContent = hasMenuPrices(textContent) || (isFromMenuUrl && textContent.length > 100);
-    console.log(`[Menu Scraper] Text content has prices: ${hasMenuPrices(textContent)}, from menu URL: ${isFromMenuUrl}, length: ${textContent.length}`);
-
-    // Step 6: Only use vision if text doesn't look like a menu
+    // Step 5: If text content is poor, try image extraction
     let imageMenuText = '';
-    if (!textHasMenuContent || textContent.length < 200) {
-      // Collect images from all menu pages
+    if (bestScore < 30 || bestMenuContent.length < 200) {
       const allImageUrls = new Set<string>();
       for (const page of pagesToProcess) {
         const images = extractMenuImages(page.html, page.url);
@@ -112,48 +118,22 @@ export async function scrapeMenu(websiteUrl: string): Promise<ScrapeResult> {
       }
 
       const imageUrls = Array.from(allImageUrls);
-      console.log(`[Menu Scraper] Text insufficient, found ${imageUrls.length} potential menu images across ${pagesToProcess.length} pages`);
+      console.log(`[Menu Scraper] Text insufficient (score=${bestScore}), found ${imageUrls.length} potential menu images`);
 
       if (imageUrls.length > 0) {
         console.log(`[Menu Scraper] Processing menu images with AI vision...`);
         imageMenuText = await extractTextFromImages(imageUrls);
       }
-    } else {
-      console.log(`[Menu Scraper] Text content sufficient, skipping image processing`);
     }
 
-    // Step 7: Validate we actually found menu content
-    // Check if image extraction found "Not a menu image" (meaning no real menu)
+    // Step 6: Combine content intelligently
     const imageHasMenu = imageMenuText &&
       !imageMenuText.includes('Not a menu image') &&
       imageMenuText.length > 100;
 
-    // If neither text nor images have menu content, fail
-    // But be more lenient if we're on a known menu URL
-    if (!textHasMenuContent && !imageHasMenu) {
-      // Last resort: if we're on a menu URL and have some text, trust it
-      if (isFromMenuUrl && textContent.length > 100) {
-        console.log(`[Menu Scraper] No prices found, but trusting menu URL content`);
-      } else {
-        console.log(`[Menu Scraper] No menu content found - text has no prices and images aren't menus`);
-        return {
-          success: false,
-          menu: null,
-          sourceUrl: menuSourceUrl,
-          error: 'Could not find menu content on website',
-        };
-      }
-    }
-
-    // Combine text from HTML and images
-    // Include text if it has prices, is from a menu URL, or we're trusting the URL
-    const useTextContent = textHasMenuContent || (isFromMenuUrl && textContent.length > 100);
-    const combinedText = combineMenuText(
-      useTextContent ? textContent : '',
-      imageHasMenu ? imageMenuText : ''
-    );
-
-    if (!combinedText || combinedText.length < 50) {
+    // If we have neither good text nor images, fail
+    if (bestScore < 10 && !imageHasMenu) {
+      console.log(`[Menu Scraper] No menu content found`);
       return {
         success: false,
         menu: null,
@@ -162,11 +142,27 @@ export async function scrapeMenu(websiteUrl: string): Promise<ScrapeResult> {
       };
     }
 
+    // Combine content - prefer image content if it's substantial
+    let finalContent = bestMenuContent;
+    if (imageHasMenu) {
+      if (imageMenuText.length > bestMenuContent.length || bestScore < 30) {
+        finalContent = imageMenuText;
+      } else {
+        finalContent = `${bestMenuContent}\n\n--- Additional items from images ---\n${imageMenuText}`;
+      }
+    }
+
+    // Step 7: Use AI to parse the menu into structured format
+    console.log(`[Menu Scraper] Parsing menu with AI (${finalContent.length} chars)...`);
+    const sections = await parseMenuWithAI(finalContent);
+
+    const hasStructuredContent = sections.length > 0 && sections.some(s => s.items.length > 0);
+
     return {
       success: true,
       menu: {
-        sections: [],
-        rawText: combinedText.substring(0, 15000),
+        sections: hasStructuredContent ? sections : [],
+        rawText: hasStructuredContent ? undefined : finalContent.substring(0, 15000),
         scrapedAt: new Date().toISOString(),
       },
       sourceUrl: menuSourceUrl,
@@ -183,50 +179,47 @@ export async function scrapeMenu(websiteUrl: string): Promise<ScrapeResult> {
 }
 
 /**
- * Find menu page URL - fast pattern matching first, AI as fallback
+ * Use Claude to parse menu text into structured sections
  */
-async function findMenuPage(html: string, baseUrl: string): Promise<MenuPageAnalysis> {
-  // Try fast pattern matching first (instant)
-  const patternMatch = findMenuLinkFallback(html, baseUrl);
-  if (patternMatch) {
-    return {
-      menuUrl: patternMatch,
-      confidence: 'high',
-      reasoning: 'Found via pattern matching',
-    };
+async function parseMenuWithAI(menuText: string): Promise<MenuSection[]> {
+  const anthropic = getAnthropicClient();
+  if (!anthropic) {
+    console.log('[Menu Scraper] No ANTHROPIC_API_KEY, skipping AI parsing');
+    return [];
   }
 
-  // No API key? Return null (menu might be on current page)
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return {
-      menuUrl: null,
-      confidence: 'low',
-      reasoning: 'No menu link found, checking current page',
-    };
+  if (menuText.length < 50) {
+    console.log('[Menu Scraper] Menu text too short for AI parsing');
+    return [];
   }
 
-  // Use AI as fallback (with fast Haiku model)
-  return findMenuPageWithAI(html, baseUrl);
-}
-
-/**
- * Use AI to analyze HTML and find the menu page URL (fallback, uses Haiku for speed)
- */
-async function findMenuPageWithAI(html: string, baseUrl: string): Promise<MenuPageAnalysis> {
   try {
-    // Extract all links from the page for analysis
-    const links = extractAllLinks(html, baseUrl);
-
-    // Keep prompt minimal for speed - be strict about JSON-only output
-    const prompt = `Find the menu page URL from these restaurant website links:
-${links.slice(0, 30).map((l) => `${l.text}: ${l.url}`).join('\n')}
-
-Respond with ONLY valid JSON, no other text: {"menuUrl": "URL or null", "reasoning": "brief"}`;
+    const truncatedText = menuText.substring(0, 8000);
+    console.log(`[Menu Scraper] Calling AI to parse ${truncatedText.length} chars...`);
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 200,
-      messages: [{ role: 'user', content: prompt }],
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: `Parse this restaurant menu into a structured JSON format. Extract all menu items with their names, descriptions, and prices.
+
+IMPORTANT RULES:
+1. Group items into logical sections (Starters, Main Courses, Desserts, Drinks, etc.)
+2. Keep original prices exactly as written (€15, 15€, $12.50, etc.)
+3. Extract descriptions if available
+4. Mark dietary info if mentioned (V=vegetarian, VG=vegan, GF=gluten-free, L=lactose-free)
+5. If a section name isn't clear, use a reasonable name like "Menu Items"
+6. Output ONLY valid JSON, no other text
+
+Output format:
+{"sections":[{"title":"Section Name","items":[{"name":"Item Name","description":"Description if any","price":"€15","dietary":["V","GF"]}]}]}
+
+Menu text to parse:
+${truncatedText}`,
+        },
+      ],
     });
 
     let responseText = message.content
@@ -234,39 +227,134 @@ Respond with ONLY valid JSON, no other text: {"menuUrl": "URL or null", "reasoni
       .map((block) => block.text)
       .join('');
 
-    // Strip markdown code blocks if present
+    console.log(`[Menu Scraper] AI response length: ${responseText.length}`);
+    console.log(`[Menu Scraper] AI response preview: ${responseText.substring(0, 300)}...`);
+
+    // Clean up response
     responseText = responseText
       .replace(/^```(?:json)?\s*\n?/i, '')
       .replace(/\n?```\s*$/i, '')
       .trim();
 
-    // Try to extract JSON from the response if it contains extra text
+    // Extract JSON object
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error('No JSON object found in response');
+      console.error('[Menu Scraper] No JSON found in AI response');
+      console.error('[Menu Scraper] Full response:', responseText);
+      return [];
     }
 
-    const result = JSON.parse(jsonMatch[0]);
-    return {
-      menuUrl: result.menuUrl,
-      confidence: 'medium',
-      reasoning: result.reasoning || 'AI analysis',
-    };
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (jsonError) {
+      console.error('[Menu Scraper] JSON parse error:', jsonError);
+      // Try to salvage truncated JSON
+      const salvaged = salvageTruncatedJSON(jsonMatch[0]);
+      if (salvaged) {
+        parsed = salvaged;
+        console.log('[Menu Scraper] Successfully salvaged truncated JSON');
+      } else {
+        console.error('[Menu Scraper] Failed to parse AI JSON response');
+        console.error('[Menu Scraper] JSON string:', jsonMatch[0].substring(0, 500));
+        return [];
+      }
+    }
+
+    if (!parsed.sections || !Array.isArray(parsed.sections)) {
+      console.error('[Menu Scraper] AI response missing sections array:', Object.keys(parsed));
+      return [];
+    }
+
+    // Validate and clean sections
+    const sections: MenuSection[] = parsed.sections
+      .filter((s: unknown) =>
+        typeof s === 'object' && s !== null &&
+        'title' in s && 'items' in s && Array.isArray((s as {items: unknown}).items)
+      )
+      .map((s: { title: string; items: Array<{ name: string; description?: string; price?: string; dietary?: string[] }> }) => ({
+        title: String(s.title),
+        items: s.items
+          .filter((item: unknown) =>
+            typeof item === 'object' && item !== null &&
+            'name' in item && typeof (item as {name: unknown}).name === 'string'
+          )
+          .map((item: { name: string; description?: string; price?: string; dietary?: string[] }): MenuItem => ({
+            name: item.name,
+            description: item.description ? String(item.description) : undefined,
+            price: item.price ? String(item.price) : undefined,
+            dietary: Array.isArray(item.dietary)
+              ? item.dietary.filter((d): d is string => typeof d === 'string')
+              : undefined,
+          }))
+      }))
+      .filter((s: MenuSection) => s.items.length > 0);
+
+    console.log(`[Menu Scraper] AI parsed ${sections.length} sections with ${sections.reduce((acc, s) => acc + s.items.length, 0)} items`);
+    return sections;
   } catch (error) {
-    console.error('[Menu Scraper] AI menu finding error:', error);
-    return {
-      menuUrl: null,
-      confidence: 'low',
-      reasoning: 'AI fallback failed',
-    };
+    console.error('[Menu Scraper] AI parsing error:', error);
+    return [];
   }
+}
+
+/**
+ * Try to salvage a truncated JSON response
+ */
+function salvageTruncatedJSON(text: string): { sections: MenuSection[] } | null {
+  const strategies = [
+    // Strategy 1: Close arrays and objects
+    () => {
+      const idx = text.lastIndexOf('}]');
+      if (idx > 0) return text.substring(0, idx + 2) + ']}';
+      return null;
+    },
+    // Strategy 2: More aggressive closing
+    () => {
+      const idx = text.lastIndexOf('}');
+      if (idx > 0) return text.substring(0, idx + 1) + ']}]}';
+      return null;
+    },
+  ];
+
+  for (const strategy of strategies) {
+    const salvaged = strategy();
+    if (salvaged) {
+      try {
+        return JSON.parse(salvaged);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Count price patterns in text
+ */
+function countPrices(text: string): number {
+  const patterns = [
+    /\d+[.,]\d{2}\s*€/g,
+    /€\s*\d+[.,]\d{2}/g,
+    /\d+\s*€/g,
+    /€\s*\d+/g,
+  ];
+
+  let count = 0;
+  for (const pattern of patterns) {
+    const matches = text.match(pattern);
+    if (matches) count += matches.length;
+  }
+  return count;
 }
 
 /**
  * Extract text from menu images using Claude Vision
  */
 async function extractTextFromImages(imageUrls: string[]): Promise<string> {
-  if (!process.env.ANTHROPIC_API_KEY || imageUrls.length === 0) {
+  const anthropic = getAnthropicClient();
+  if (!anthropic || imageUrls.length === 0) {
     return '';
   }
 
@@ -418,25 +506,6 @@ function extractAllLinks(html: string, baseUrl: string): { url: string; text: st
   return links;
 }
 
-/**
- * Extract navigation HTML for better context
- */
-function extractNavigationHtml(html: string): string {
-  // Try to find nav elements
-  const navMatch = html.match(/<nav[^>]*>[\s\S]*?<\/nav>/gi);
-  if (navMatch) {
-    return navMatch.join('\n');
-  }
-
-  // Try header
-  const headerMatch = html.match(/<header[^>]*>[\s\S]*?<\/header>/gi);
-  if (headerMatch) {
-    return headerMatch.join('\n');
-  }
-
-  // Return first 2000 chars as fallback
-  return html.substring(0, 2000);
-}
 
 /**
  * Extract images that might be menu images
@@ -519,50 +588,6 @@ function extractTextContent(html: string): string {
   return textContent;
 }
 
-/**
- * Check if text contains menu prices
- */
-function hasMenuPrices(text: string): boolean {
-  const pricePatterns = [
-    /\d+[.,]\d{2}\s*€/g, // 12.50 €
-    /€\s*\d+[.,]\d{2}/g, // € 12.50
-    /\d+\s*€/g, // 12 €
-    /\$\s*\d+[.,]\d{2}/g, // $ 12.50
-    /\d+[.,]\d{2}\s*\$/g, // 12.50 $
-    /\d+[.,]\d{2}\s*EUR/gi, // 12.50 EUR
-  ];
-
-  let priceCount = 0;
-  for (const pattern of pricePatterns) {
-    const matches = text.match(pattern);
-    if (matches) {
-      priceCount += matches.length;
-    }
-  }
-
-  // Consider it menu-worthy if we find at least 3 prices
-  return priceCount >= 3;
-}
-
-/**
- * Combine text from HTML and images, avoiding duplicates
- */
-function combineMenuText(htmlText: string, imageText: string): string {
-  if (!imageText) {
-    return htmlText;
-  }
-
-  if (!htmlText) {
-    return imageText;
-  }
-
-  // If image text is substantial, prioritize it (likely the actual menu)
-  if (imageText.length > 500 && !imageText.includes('Not a menu image')) {
-    return `=== Menu from Images ===\n${imageText}\n\n=== Additional Text from Page ===\n${htmlText.substring(0, 3000)}`;
-  }
-
-  return `${htmlText}\n\n=== Additional Content from Images ===\n${imageText}`;
-}
 
 /**
  * Check if a URL is a valid menu link (not an anchor, not same page)
@@ -620,20 +645,12 @@ function findAllMenuLinks(html: string, baseUrl: string): string[] {
 }
 
 /**
- * Fallback menu link finder using patterns (returns first match)
- */
-function findMenuLinkFallback(html: string, baseUrl: string): string | null {
-  const allLinks = findAllMenuLinks(html, baseUrl);
-  return allLinks.length > 0 ? allLinks[0] : null;
-}
-
-/**
  * Fetch a page with proper headers and timeout
  */
 async function fetchPage(url: string): Promise<FetchResult | null> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout for speed
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
     const response = await fetch(url, {
       signal: controller.signal,

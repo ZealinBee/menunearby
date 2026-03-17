@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { MenuScrapeResponse } from '@/types/menu';
 import { scrapeMenu } from '@/lib/menu-scraper';
-import { formatMenuWithAI } from '@/lib/menu-ai-formatter';
 import { placesCache, menuCacheKey } from '@/lib/cache';
 import { CACHE_TTL } from '@/lib/constants';
 
@@ -72,22 +71,12 @@ export async function GET(
       }
     }
 
-    // Scrape the menu
+    // Scrape and parse the menu (AI formatting is now built-in)
     const result = await scrapeMenu(websiteUrl);
-
-    // Always use AI to format the menu for better results
-    let enhancedMenu = result.menu;
-    if (result.menu) {
-      try {
-        enhancedMenu = await formatMenuWithAI(result.menu);
-      } catch (aiError) {
-        console.error('AI formatting failed, using scraped result:', aiError);
-      }
-    }
 
     const response: MenuScrapeResponse = {
       success: result.success,
-      menu: enhancedMenu,
+      menu: result.menu,
       sourceUrl: result.sourceUrl,
       cached: false,
       error: result.error,
