@@ -66,6 +66,9 @@ export async function formatMenuWithAI(menu: MenuContent): Promise<MenuContent> 
       .replace(/\n?```\s*$/i, '')
       .trim();
 
+    // Log first part of response for debugging
+    console.log(`[Menu AI] Response preview: ${responseText.substring(0, 200)}...`);
+
     // Try to parse JSON, handling truncated responses
     let parsed;
     try {
@@ -115,6 +118,7 @@ export async function formatMenuWithAI(menu: MenuContent): Promise<MenuContent> 
 
       if (!parsed) {
         console.error('All salvage attempts failed');
+        console.error('[Menu AI] Raw response:', responseText);
         return menu;
       }
     }

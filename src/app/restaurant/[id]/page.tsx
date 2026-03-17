@@ -272,7 +272,7 @@ export default function RestaurantDetailsPage() {
           {/* Right Column - Contact & Hours */}
           <div className="space-y-6">
             {/* Contact Card */}
-            <div className="card">
+            <div className="card font-readable">
               <h3 className="text-lg text-[var(--color-white)] mb-4">Contact & Location</h3>
               <div className="space-y-4">
                 {/* Address */}
@@ -333,7 +333,7 @@ export default function RestaurantDetailsPage() {
 
             {/* Opening Hours */}
             {restaurant.openingHours && restaurant.openingHours.weekdayDescriptions.length > 0 && (
-              <div className="card">
+              <div className="card font-readable">
                 <h3 className="text-lg text-[var(--color-white)] mb-4">Opening Hours</h3>
                 <div className="space-y-2">
                   {restaurant.openingHours.weekdayDescriptions.map((day, index) => {

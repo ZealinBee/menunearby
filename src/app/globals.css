@@ -198,6 +198,12 @@ p {
   text-transform: uppercase;
 }
 
+/* Sans-serif font for readable small text (contact info, hours, etc.) */
+.font-readable {
+  font-family: var(--font-libre-franklin), 'Libre Franklin', Arial, sans-serif;
+  letter-spacing: 0.01em;
+}
+
 /* ============================================
    LINKS
    ============================================ */

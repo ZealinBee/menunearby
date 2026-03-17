@@ -3,34 +3,27 @@
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MapPin, ArrowLeft } from "lucide-react";
-import LocationSearch from "@/components/LocationSearch";
+import LocationSearch, { type SelectedLocation } from "@/components/LocationSearch";
 import RestaurantList from "@/components/RestaurantList";
-
-interface SelectedLocation {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-}
 
 function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // Read location from URL params
-  const lat = searchParams.get("lat");
-  const lon = searchParams.get("lon");
-  const displayName = searchParams.get("location");
+  const latParam = searchParams.get("lat");
+  const lonParam = searchParams.get("lon");
+  const locationName = searchParams.get("location");
 
   const selectedLocation: SelectedLocation | null =
-    lat && lon && displayName
-      ? { place_id: 0, display_name: displayName, lat, lon }
+    latParam && lonParam && locationName
+      ? { lat: parseFloat(latParam), lon: parseFloat(lonParam), name: locationName, address: "" }
       : null;
 
   const handleLocationSelect = (location: SelectedLocation) => {
     // Store location in URL params so it persists on navigation
     router.push(
-      `/?lat=${location.lat}&lon=${location.lon}&location=${encodeURIComponent(location.display_name)}`
+      `/?lat=${location.lat}&lon=${location.lon}&location=${encodeURIComponent(location.name)}`
     );
   };
 
@@ -68,14 +61,14 @@ function HomeContent() {
           <div className="max-w-6xl mx-auto px-4 sm:px-8 py-4">
             <div className="flex items-center gap-2 text-sm text-[var(--color-cream)] opacity-70">
               <MapPin className="w-4 h-4" strokeWidth={1.5} />
-              <span>{selectedLocation.display_name.split(",").slice(0, 2).join(", ")}</span>
+              <span>{selectedLocation.name}</span>
             </div>
           </div>
         </div>
 
         <RestaurantList
-          userLat={parseFloat(selectedLocation.lat)}
-          userLon={parseFloat(selectedLocation.lon)}
+          userLat={selectedLocation.lat}
+          userLon={selectedLocation.lon}
           onViewDetails={handleViewDetails}
         />
       </div>

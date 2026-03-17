@@ -3,54 +3,30 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, MapPin, Loader2, X, Navigation } from "lucide-react";
 
-interface LocationResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-  address?: {
-    city?: string;
-    town?: string;
-    village?: string;
-    municipality?: string;
-    county?: string;
-    postcode?: string;
-    road?: string;
-    house_number?: string;
-  };
+interface LocationSuggestion {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  fullText: string;
+}
+
+interface GeocodedLocation {
+  lat: number;
+  lon: number;
+  address: string;
+  name: string;
+}
+
+export interface SelectedLocation {
+  lat: number;
+  lon: number;
+  name: string;
+  address: string;
 }
 
 interface LocationSearchProps {
-  onLocationSelect?: (location: LocationResult) => void;
+  onLocationSelect?: (location: SelectedLocation) => void;
   placeholder?: string;
-}
-
-// Format location name for display (utility function)
-function formatLocationName(location: LocationResult): string {
-  const addr = location.address;
-  if (!addr) return location.display_name.split(",")[0];
-
-  const city = addr.city || addr.town || addr.village || addr.municipality;
-  const parts: string[] = [];
-
-  if (addr.road) {
-    parts.push(addr.house_number ? `${addr.road} ${addr.house_number}` : addr.road);
-  }
-  if (city) parts.push(city);
-
-  return parts.length > 0 ? parts.join(", ") : location.display_name.split(",")[0];
-}
-
-// Get subtitle for result item (utility function)
-function getLocationSubtitle(location: LocationResult): string {
-  const addr = location.address;
-  if (!addr) return "Finland";
-
-  const parts: string[] = [];
-  if (addr.county) parts.push(addr.county);
-  if (addr.postcode) parts.push(addr.postcode);
-
-  return parts.length > 0 ? parts.join(" • ") : "Finland";
 }
 
 // Custom debounce hook
@@ -75,18 +51,18 @@ export default function LocationSearch({
   placeholder = "Search for a location in Finland..."
 }: LocationSearchProps) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<LocationResult[]>([]);
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGeoLoading, setIsGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState<LocationResult | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const debouncedQuery = useDebounce(query, 300);
 
-  // Reverse geocode coordinates to get address
-  const reverseGeocode = useCallback(async (lat: number, lon: number): Promise<LocationResult | null> => {
+  // Reverse geocode coordinates using Nominatim (for current location only)
+  const reverseGeocode = useCallback(async (lat: number, lon: number): Promise<SelectedLocation | null> => {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?` +
@@ -106,7 +82,15 @@ export default function LocationSearch({
       if (!response.ok) throw new Error("Reverse geocode failed");
 
       const data = await response.json();
-      return data as LocationResult;
+      const addr = data.address;
+      const city = addr?.city || addr?.town || addr?.village || addr?.municipality;
+
+      return {
+        lat,
+        lon,
+        name: city || "Current Location",
+        address: data.display_name?.split(",").slice(0, 3).join(", ") || "",
+      };
     } catch (error) {
       console.error("Reverse geocode error:", error);
       return null;
@@ -127,20 +111,18 @@ export default function LocationSearch({
       async (position) => {
         const { latitude, longitude } = position.coords;
 
-        // Reverse geocode to get address
         const location = await reverseGeocode(latitude, longitude);
 
         if (location) {
           setSelectedLocation(location);
-          setQuery(formatLocationName(location));
+          setQuery(location.name);
           onLocationSelect?.(location);
         } else {
-          // If reverse geocode fails, create a basic location object
-          const basicLocation: LocationResult = {
-            place_id: Date.now(),
-            display_name: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
-            lat: latitude.toString(),
-            lon: longitude.toString(),
+          const basicLocation: SelectedLocation = {
+            lat: latitude,
+            lon: longitude,
+            name: "Current Location",
+            address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
           };
           setSelectedLocation(basicLocation);
           setQuery("Current Location");
@@ -168,44 +150,34 @@ export default function LocationSearch({
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 300000, // Cache for 5 minutes
+        maximumAge: 300000,
       }
     );
   }, [reverseGeocode, onLocationSelect]);
 
-  // Search for locations using Nominatim API
+  // Search for locations using Google Places Autocomplete
   const searchLocations = useCallback(async (searchQuery: string) => {
     if (!searchQuery || searchQuery.length < 2) {
-      setResults([]);
+      setSuggestions([]);
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?` +
-        new URLSearchParams({
-          q: searchQuery,
-          format: "json",
-          addressdetails: "1",
-          limit: "6",
-          countrycodes: "fi", // Restrict to Finland
-        }),
-        {
-          headers: {
-            "Accept-Language": "en",
-          },
-        }
-      );
+      const response = await fetch("/api/places/autocomplete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchQuery }),
+      });
 
       if (!response.ok) throw new Error("Search failed");
 
-      const data: LocationResult[] = await response.json();
-      setResults(data);
-      setIsOpen(data.length > 0);
+      const data = await response.json();
+      setSuggestions(data.suggestions || []);
+      setIsOpen((data.suggestions?.length ?? 0) > 0);
     } catch (error) {
       console.error("Location search error:", error);
-      setResults([]);
+      setSuggestions([]);
     } finally {
       setIsLoading(false);
     }
@@ -230,24 +202,48 @@ export default function LocationSearch({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSelect = (location: LocationResult) => {
-    setSelectedLocation(location);
-    setQuery(formatLocationName(location));
+  const handleSelect = async (suggestion: LocationSuggestion) => {
+    setIsLoading(true);
     setIsOpen(false);
-    setResults([]);
-    onLocationSelect?.(location);
+    setQuery(suggestion.mainText);
+
+    try {
+      const response = await fetch(`/api/places/geocode/${suggestion.placeId}`);
+
+      if (!response.ok) throw new Error("Geocode failed");
+
+      const data: GeocodedLocation = await response.json();
+
+      const location: SelectedLocation = {
+        lat: data.lat,
+        lon: data.lon,
+        name: data.name || suggestion.mainText,
+        address: data.address || suggestion.secondaryText,
+      };
+
+      setSelectedLocation(location);
+      setSuggestions([]);
+      onLocationSelect?.(location);
+    } catch (error) {
+      console.error("Geocode error:", error);
+      setGeoError("Failed to get location details. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleClear = () => {
     setQuery("");
     setSelectedLocation(null);
-    setResults([]);
+    setSuggestions([]);
     setIsOpen(false);
+    setGeoError(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQuery(e.target.value);
     setSelectedLocation(null);
+    setGeoError(null);
     if (e.target.value.length >= 2) {
       setIsOpen(true);
     }
@@ -266,9 +262,9 @@ export default function LocationSearch({
             type="text"
             value={query}
             onChange={handleInputChange}
-            onFocus={() => results.length > 0 && setIsOpen(true)}
+            onFocus={() => suggestions.length > 0 && setIsOpen(true)}
             placeholder={placeholder}
-            className="bg-transparent border-none outline-none text-[var(--color-cream)] placeholder:text-[var(--color-cream)] placeholder:opacity-50 w-full text-base"
+            className="bg-transparent border-none outline-none text-[var(--color-cream)] placeholder:text-[var(--color-cream)] placeholder:opacity-70 w-full text-base"
             autoComplete="off"
           />
           {query && (
@@ -311,21 +307,21 @@ export default function LocationSearch({
       )}
 
       {/* Dropdown Results */}
-      {isOpen && results.length > 0 && (
+      {isOpen && suggestions.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--color-primary-light)] border border-[var(--color-primary-lighter)] z-50 max-h-80 overflow-y-auto">
-          {results.map((result) => (
+          {suggestions.map((suggestion) => (
             <button
-              key={result.place_id}
-              onClick={() => handleSelect(result)}
+              key={suggestion.placeId}
+              onClick={() => handleSelect(suggestion)}
               className="w-full px-5 py-3 text-left hover:bg-[var(--color-primary-lighter)] transition-colors flex items-start gap-3 border-b border-[var(--color-primary-lighter)] last:border-b-0"
             >
               <MapPin className="w-5 h-5 text-[var(--color-accent)] mt-0.5 flex-shrink-0" strokeWidth={1.5} />
               <div className="min-w-0">
                 <p className="text-[var(--color-white)] truncate">
-                  {formatLocationName(result)}
+                  {suggestion.mainText}
                 </p>
                 <p className="text-sm text-[var(--color-cream)] opacity-60 truncate">
-                  {getLocationSubtitle(result)}
+                  {suggestion.secondaryText}
                 </p>
               </div>
             </button>
@@ -334,7 +330,7 @@ export default function LocationSearch({
       )}
 
       {/* No results message */}
-      {isOpen && query.length >= 2 && results.length === 0 && !isLoading && (
+      {isOpen && query.length >= 2 && suggestions.length === 0 && !isLoading && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--color-primary-light)] border border-[var(--color-primary-lighter)] z-50 px-5 py-4">
           <p className="text-[var(--color-cream)] opacity-60 text-center">
             No locations found in Finland
